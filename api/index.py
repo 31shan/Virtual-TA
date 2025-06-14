@@ -53,59 +53,72 @@ def get_embedding(text: str, model="text-embedding-3-small"):
    return client.embeddings.create(input=[text.replace("\n", " ")], model=model).data[0].embedding
 
 # --- Step 5: Define the main API endpoint ---
+# In api/index.py, replace the entire query_api function with this:
+
 @app.post("/api/", response_model=QueryResponse)
 async def query_api(request: QueryRequest):
     try:
-        # a. Generate an embedding for the user's question using our new function.
+        # a. Generate an embedding for the user's question.
         question_embedding = get_embedding(request.question)
 
-        # b. Retrieve the most relevant documents from your ChromaDB.
+        # b. Retrieve the top 3 most relevant documents from ChromaDB.
         results = collection.query(
             query_embeddings=[question_embedding],
-            n_results=3 # Get the top 3 most relevant text chunks.
+            n_results=3
         )
         
-        # c. Prepare the context and source links for the final answer.
-        context = "\n\n".join(results.get('documents', [[]])[0])
+        # c. THIS IS THE NEW, ADVANCED LOGIC: Separate the best context from the rest.
+        documents = results.get('documents', [[]])[0]
+        if not documents:
+            return QueryResponse(answer="I could not find any relevant information to answer your question.", links=[])
+
+        # The most relevant document is the first one.
+        primary_context = documents[0]
+        # The other documents are used as additional, secondary context.
+        additional_context = "\n\n".join(documents[1:])
+
+        # Prepare the source links as before.
         links = []
         for meta in results.get('metadatas', [[]])[0]:
             if meta and meta.get('url'):
                 links.append({"url": meta.get('url', ''), "text": meta.get('title', 'Source Link')})
 
-        # d. Build the prompt for the chat model (GPT-4o-mini).
+        # d. Build the final, structured prompt that emphasizes the best information.
         prompt = f"""You are a precise and literal teaching assistant for the IIT Madras Online Degree.
-Your task is to answer the student's question based *strictly and exclusively* on the provided context below.
-If the context contains a direct instruction or a mandatory requirement, you MUST state it exactly as the primary answer. Do not suggest alternatives or simpler paths if the context specifies a required method.
+Your task is to answer the student's question based on the context provided below.
+You MUST prioritize the information in the "PRIMARY CONTEXT". If it contains a direct instruction, your answer must be based on that instruction. Use the "ADDITIONAL CONTEXT" only for supplementary information if needed.
 
-Question: {request.question}
+### PRIMARY CONTEXT (Most Important):
+{primary_context}
 
-Context:
----
-{context}
----
+### ADDITIONAL CONTEXT:
+{additional_context}
 
-Answer:"""
+### Question:
+{request.question}
 
-        # e. Generate the final answer using the chat model via the AI Proxy.
+### Answer:
+"""
+
+        # e. Generate the final answer using the chat model.
         completion = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You are a helpful teaching assistant. Answer only based on the context provided."},
+                {"role": "system", "content": "You are a helpful teaching assistant. You must follow the provided context hierarchy and prioritize the PRIMARY CONTEXT."},
                 {"role": "user", "content": prompt}
             ],
             max_tokens=400,
-            temperature=0.1
+            temperature=0.0 # Set temperature to 0.0 for maximum factuality and less creativity
         )
         answer = completion.choices[0].message.content.strip()
 
     except Exception as e:
-        # If any step fails, return a helpful error message.
         print(f"ERROR during API request processing: {e}")
         answer = f"Sorry, an error occurred. Please try again. Details: {e}"
         links = []
 
-    # f. Return the final, structured response.
     return QueryResponse(answer=answer, links=links)
+
 
 # A simple root endpoint to quickly check if the API is alive.
 @app.get("/")
