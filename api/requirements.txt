@@ -1,7 +1,6 @@
-fastapi>=0.68.0
-sentence-transformers>=2.2.0
-chromadb>=0.4.0
+fastapi
+uvicorn
 openai>=1.0.0
-pillow>=10.0.0
-python-multipart>=0.0.5
-uvicorn>=0.15.0
+python-multipart
+pydantic
+chromadb
