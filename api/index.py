@@ -73,14 +73,16 @@ async def query_api(request: QueryRequest):
                 links.append({"url": meta.get('url', ''), "text": meta.get('title', 'Source Link')})
 
         # d. Build the prompt for the chat model (GPT-4o-mini).
-        prompt = f"""You are a precise teaching assistant for the IIT Madras Online Degree.
-Your task is to answer the student's question based *strictly* on the provided context.
-If the context provides a clear recommendation or a required method, state it directly. Do not suggest alternatives not mentioned in the context.
+        prompt = f"""You are a precise and literal teaching assistant for the IIT Madras Online Degree.
+Your task is to answer the student's question based *strictly and exclusively* on the provided context below.
+If the context contains a direct instruction or a mandatory requirement, you MUST state it exactly as the primary answer. Do not suggest alternatives or simpler paths if the context specifies a required method.
 
 Question: {request.question}
 
 Context:
+---
 {context}
+---
 
 Answer:"""
 
